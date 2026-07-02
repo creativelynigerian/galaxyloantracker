@@ -46,3 +46,5 @@ service cloud.firestore {
     }
   }
 }
+g);
+const analytics = getAnalytics(app);
