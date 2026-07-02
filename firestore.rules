@@ -1,0 +1,48 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // ---------- users ----------
+    // Anyone signed in can read their own profile, or an admin can read any.
+    // A user can only ever create/update their OWN profile document, and
+    // can never set their own role to "admin" (that must be done by hand
+    // in the Firebase Console, once, for the site owner).
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == userId
+                    && request.resource.data.role == 'borrower';
+      allow update: if isSignedIn() && request.auth.uid == userId
+                    && request.resource.data.role == resource.data.role;
+      allow delete: if false;
+    }
+
+    // ---------- loans ----------
+    match /loans/{loanId} {
+      // Borrowers can read their own loans; admin can read all.
+      allow read: if isSignedIn() &&
+        (resource.data.borrowerId == request.auth.uid || isAdmin());
+
+      // Borrowers can create a loan application for themselves only,
+      // and it must start as "pending" with no schedule yet.
+      allow create: if isSignedIn()
+        && request.resource.data.borrowerId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.schedule.size() == 0;
+
+      // Only admin can update a loan (approve/reject/mark payments).
+      allow update: if isAdmin();
+
+      allow delete: if false;
+    }
+  }
+}

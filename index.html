@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — Sign In</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="ledger-book">
+      <div class="eyebrow">Ledger</div>
+      <h1>Sign in</h1>
+      <p class="sub">Track loans given, repayments due, and who owes what.</p>
+
+      <div class="error-msg" id="errorBox"></div>
+
+      <form id="loginForm">
+        <div class="field">
+          <label for="email">Email</label>
+          <input type="email" id="email" required autocomplete="email">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" required autocomplete="current-password">
+        </div>
+        <button class="btn brass full" type="submit" id="submitBtn">Sign in</button>
+      </form>
+
+      <div class="foot-link">
+        New here? <a href="register.html">Create an account</a>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { auth, signInWithEmailAndPassword, getUserProfile } from "./js/firebase-init.js";
+    import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+    const form = document.getElementById("loginForm");
+    const errorBox = document.getElementById("errorBox");
+    const submitBtn = document.getElementById("submitBtn");
+
+    // If already logged in, bounce straight to the right dashboard.
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const profile = await getUserProfile(user.uid);
+        window.location.href = profile?.role === "admin" ? "admin.html" : "dashboard.html";
+      }
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      errorBox.classList.remove("show");
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Signing in…";
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+        // onAuthStateChanged above handles the redirect
+      } catch (err) {
+        errorBox.textContent = friendlyError(err);
+        errorBox.classList.add("show");
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Sign in";
+      }
+    });
+
+    function friendlyError(err) {
+      const code = err.code || "";
+      if (code.includes("wrong-password") || code.includes("invalid-credential")) return "Incorrect email or password.";
+      if (code.includes("user-not-found")) return "No account found with that email.";
+      if (code.includes("too-many-requests")) return "Too many attempts. Try again shortly.";
+      return "Couldn't sign in. Please try again.";
+    }
+  </script>
+</body>
+</html>

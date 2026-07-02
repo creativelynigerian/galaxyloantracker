@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — Loan Detail</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <span class="mark">Ledger</span>
+      <span class="tag" id="roleTag"></span>
+    </div>
+    <div class="user-chip">
+      <a class="btn ghost small" id="backLink" href="dashboard.html">← Back</a>
+    </div>
+  </div>
+
+  <div class="shell">
+    <div id="content"><div class="loading">Loading loan…</div></div>
+  </div>
+
+  <script type="module">
+    import {
+      auth, db, requireAuth, doc, getDoc, updateDoc, onSnapshot,
+      formatMoney, formatDate, buildSchedule, loanStatusLabel
+    } from "./js/firebase-init.js";
+
+    const params = new URLSearchParams(window.location.search);
+    const loanId = params.get("id");
+    const content = document.getElementById("content");
+
+    if (!loanId) {
+      content.innerHTML = `<div class="empty-state"><h3>No loan specified</h3></div>`;
+    } else {
+      requireAuth((user, profile) => {
+        document.getElementById("roleTag").textContent = profile.role === "admin" ? "Admin" : "Borrower";
+        document.getElementById("backLink").href = profile.role === "admin" ? "admin.html" : "dashboard.html";
+
+        const ref = doc(db, "loans", loanId);
+        onSnapshot(ref, (snap) => {
+          if (!snap.exists()) {
+            content.innerHTML = `<div class="empty-state"><h3>Loan not found</h3></div>`;
+            return;
+          }
+          const loan = { id: snap.id, ...snap.data() };
+          const isAdmin = profile.role === "admin";
+          const isOwner = loan.borrowerId === user.uid;
+          if (!isAdmin && !isOwner) {
+            content.innerHTML = `<div class="empty-state"><h3>You don't have access to this loan</h3></div>`;
+            return;
+          }
+          render(loan, isAdmin, ref);
+        });
+      });
+    }
+
+    function render(loan, isAdmin, ref) {
+      const status = loanStatusLabel(loan);
+      const paidCount = (loan.schedule || []).filter(s => s.paid).length;
+      const totalInstallments = (loan.schedule || []).length;
+      const remaining = (loan.schedule || []).filter(s => !s.paid).reduce((sum, s) => sum + s.amount, 0);
+
+      content.innerHTML = `
+        <div class="detail-header">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap;">
+            <div>
+              <h1>${loan.borrowerName}</h1>
+              <p style="color:var(--slate);margin:0;">${loan.purpose || "No purpose given"}</p>
+            </div>
+            <div class="stamp ${status}" style="font-size:0.8rem;padding:8px 14px;">${status}</div>
+          </div>
+
+          <div class="detail-grid">
+            <div class="stat"><div class="label">Principal</div><div class="value">${formatMoney(loan.amount)}</div></div>
+            <div class="stat"><div class="label">Term</div><div class="value">${loan.termMonths} mo</div></div>
+            <div class="stat"><div class="label">Rate</div><div class="value">${loan.interestRate}%</div></div>
+            <div class="stat"><div class="label">Total due</div><div class="value">${formatMoney(loan.totalDue || loan.amount)}</div></div>
+            <div class="stat"><div class="label">Remaining</div><div class="value">${formatMoney(remaining)}</div></div>
+            <div class="stat"><div class="label">Installments paid</div><div class="value">${paidCount} / ${totalInstallments || "—"}</div></div>
+          </div>
+
+          ${actionsHTML(loan, isAdmin)}
+        </div>
+
+        ${scheduleHTML(loan, isAdmin)}
+      `;
+
+      if (isAdmin && loan.status === "pending") {
+        document.getElementById("approveBtn")?.addEventListener("click", () => approveLoan(loan, ref));
+        document.getElementById("rejectBtn")?.addEventListener("click", () => rejectLoan(ref));
+      }
+
+      document.querySelectorAll(".mark-paid-btn").forEach(btn => {
+        btn.addEventListener("click", () => markPaid(loan, ref, parseInt(btn.dataset.index, 10)));
+      });
+    }
+
+    function actionsHTML(loan, isAdmin) {
+      if (isAdmin && loan.status === "pending") {
+        return `
+          <div class="actions-row">
+            <button class="btn brass" id="approveBtn">Approve loan</button>
+            <button class="btn danger" id="rejectBtn">Reject</button>
+          </div>`;
+      }
+      if (loan.status === "rejected") {
+        return `<div class="banner warn">This application was rejected.</div>`;
+      }
+      if (loan.status === "pending") {
+        return `<div class="banner info">Waiting on admin approval.</div>`;
+      }
+      return "";
+    }
+
+    function scheduleHTML(loan, isAdmin) {
+      if (!loan.schedule || loan.schedule.length === 0) return "";
+      const now = new Date();
+      const rows = loan.schedule.map(s => {
+        const due = new Date(s.dueDate);
+        const overdue = !s.paid && due < now;
+        return `
+          <tr class="${overdue ? "row-overdue" : ""}">
+            <td>#${s.index + 1}</td>
+            <td>${formatDate(s.dueDate)}</td>
+            <td class="amt">${formatMoney(s.amount)}</td>
+            <td>${s.paid ? `paid ${formatDate(s.paidDate)}` : (overdue ? "overdue" : "upcoming")}</td>
+            <td>${isAdmin && !s.paid ? `<button class="btn small ghost mark-paid-btn" data-index="${s.index}">Mark paid</button>` : ""}</td>
+          </tr>`;
+      }).join("");
+
+      return `
+        <table class="schedule">
+          <thead>
+            <tr><th>#</th><th>Due</th><th>Amount</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    }
+
+    async function approveLoan(loan, ref) {
+      const { schedule, totalDue } = buildSchedule(loan.amount, loan.interestRate, loan.termMonths);
+      await updateDoc(ref, {
+        status: "active",
+        schedule,
+        totalDue,
+        approvedAt: new Date().toISOString()
+      });
+    }
+
+    async function rejectLoan(ref) {
+      await updateDoc(ref, { status: "rejected" });
+    }
+
+    async function markPaid(loan, ref, index) {
+      const schedule = loan.schedule.map(s =>
+        s.index === index ? { ...s, paid: true, paidDate: new Date().toISOString() } : s
+      );
+      const allPaid = schedule.every(s => s.paid);
+      await updateDoc(ref, {
+        schedule,
+        status: allPaid ? "paid" : loan.status
+      });
+    }
+  </script>
+</body>
+</html>

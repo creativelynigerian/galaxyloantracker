@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — Apply for a Loan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <span class="mark">Ledger</span>
+      <span class="tag">Borrower</span>
+    </div>
+    <div class="user-chip">
+      <a class="btn ghost small" href="dashboard.html">← Back</a>
+    </div>
+  </div>
+
+  <div class="shell" style="max-width:560px;">
+    <div class="detail-header" style="margin-top:36px;">
+      <h1>Apply for a loan</h1>
+      <p style="color:var(--slate);margin-top:0;">This goes to the admin for approval before anything is active.</p>
+
+      <div class="error-msg" id="errorBox"></div>
+
+      <form id="applyForm">
+        <div class="field">
+          <label for="amount">Amount requested (USD)</label>
+          <input type="number" id="amount" min="1" step="0.01" required>
+        </div>
+        <div class="field">
+          <label for="termMonths">Repayment term (months)</label>
+          <input type="number" id="termMonths" min="1" max="60" value="6" required>
+        </div>
+        <div class="field">
+          <label for="interestRate">Interest rate (% annual, simple)</label>
+          <input type="number" id="interestRate" min="0" max="100" step="0.1" value="0" required>
+          <div class="hint">Set by whoever's lending — leave at 0 for an interest-free loan.</div>
+        </div>
+        <div class="field">
+          <label for="purpose">What's it for?</label>
+          <textarea id="purpose" rows="3" placeholder="e.g. Car repair, rent gap, small business stock"></textarea>
+        </div>
+        <button class="btn brass full" type="submit" id="submitBtn">Submit application</button>
+      </form>
+    </div>
+  </div>
+
+  <script type="module">
+    import {
+      auth, db, requireAuth, addDoc, collection, serverTimestamp
+    } from "./js/firebase-init.js";
+
+    let currentUser, currentProfile;
+    requireAuth((user, profile) => {
+      currentUser = user;
+      currentProfile = profile;
+    });
+
+    document.getElementById("applyForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errorBox = document.getElementById("errorBox");
+      const submitBtn = document.getElementById("submitBtn");
+      errorBox.classList.remove("show");
+
+      const amount = parseFloat(document.getElementById("amount").value);
+      const termMonths = parseInt(document.getElementById("termMonths").value, 10);
+      const interestRate = parseFloat(document.getElementById("interestRate").value);
+      const purpose = document.getElementById("purpose").value.trim();
+
+      if (!amount || amount <= 0) {
+        errorBox.textContent = "Enter a valid amount.";
+        errorBox.classList.add("show");
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Submitting…";
+      try {
+        await addDoc(collection(db, "loans"), {
+          borrowerId: currentUser.uid,
+          borrowerName: currentProfile.name || currentProfile.email,
+          borrowerEmail: currentProfile.email,
+          amount,
+          termMonths,
+          interestRate,
+          purpose,
+          status: "pending",
+          schedule: [],
+          totalDue: 0,
+          createdAt: serverTimestamp(),
+          approvedAt: null
+        });
+        window.location.href = "dashboard.html";
+      } catch (err) {
+        errorBox.textContent = "Couldn't submit your application. Please try again.";
+        errorBox.classList.add("show");
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Submit application";
+      }
+    });
+  </script>
+</body>
+</html>

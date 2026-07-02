@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — My Loans</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <span class="mark">Ledger</span>
+      <span class="tag">Borrower</span>
+    </div>
+    <div class="user-chip">
+      <span id="whoami"></span>
+      <button class="btn ghost small" id="logoutBtn">Sign out</button>
+    </div>
+  </div>
+
+  <div class="shell">
+    <div class="section-head">
+      <h2>My loans</h2>
+      <a class="btn brass small" href="apply.html">+ Apply for a loan</a>
+    </div>
+    <div id="loanList"><div class="loading">Loading your loans…</div></div>
+  </div>
+
+  <script type="module">
+    import {
+      auth, db, signOut, requireAuth, collection, query, where,
+      onSnapshot, formatMoney, formatDate, loanStatusLabel
+    } from "./js/firebase-init.js";
+
+    document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth));
+
+    requireAuth((user, profile) => {
+      document.getElementById("whoami").textContent = profile.name || profile.email;
+
+      const q = query(collection(db, "loans"), where("borrowerId", "==", user.uid));
+      onSnapshot(q, (snap) => {
+        const listEl = document.getElementById("loanList");
+        if (snap.empty) {
+          listEl.innerHTML = `
+            <div class="empty-state">
+              <h3>No loans yet</h3>
+              <p>When you apply, it'll show up here for approval.</p>
+            </div>`;
+          return;
+        }
+        const loans = [];
+        snap.forEach(d => loans.push({ id: d.id, ...d.data() }));
+        loans.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+
+        listEl.innerHTML = loans.map(loan => {
+          const status = loanStatusLabel(loan);
+          return `
+            <a class="loan-card" href="loan-detail.html?id=${loan.id}" style="text-decoration:none;color:inherit;">
+              <div>
+                <div class="who">${loan.purpose || "Loan"}</div>
+                <div class="meta">Applied ${formatDate(loan.createdAt)} · ${loan.termMonths} mo · ${loan.interestRate}% APR</div>
+              </div>
+              <div class="amount mono">${formatMoney(loan.amount)}</div>
+              <div class="stamp ${status}">${status}</div>
+            </a>`;
+        }).join("");
+      });
+    });
+  </script>
+</body>
+</html>

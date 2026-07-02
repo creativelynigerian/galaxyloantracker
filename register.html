@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — Create Account</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="ledger-book">
+      <div class="eyebrow">Ledger</div>
+      <h1>Create account</h1>
+      <p class="sub">Borrowers register here to apply for a loan and track repayment.</p>
+
+      <div class="error-msg" id="errorBox"></div>
+
+      <form id="registerForm">
+        <div class="field">
+          <label for="name">Full name</label>
+          <input type="text" id="name" required autocomplete="name">
+        </div>
+        <div class="field">
+          <label for="email">Email</label>
+          <input type="email" id="email" required autocomplete="email">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" required minlength="6" autocomplete="new-password">
+          <div class="hint">At least 6 characters.</div>
+        </div>
+        <button class="btn brass full" type="submit" id="submitBtn">Create account</button>
+      </form>
+
+      <div class="foot-link">
+        Already have an account? <a href="index.html">Sign in</a>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import {
+      auth, db, createUserWithEmailAndPassword, updateProfile,
+      doc, setDoc, serverTimestamp
+    } from "./js/firebase-init.js";
+
+    const form = document.getElementById("registerForm");
+    const errorBox = document.getElementById("errorBox");
+    const submitBtn = document.getElementById("submitBtn");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      errorBox.classList.remove("show");
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Creating…";
+
+      const name = document.getElementById("name").value.trim();
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+
+      try {
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(cred.user, { displayName: name });
+
+        // Every new signup is a "borrower" by default.
+        // To make yourself the admin: register once, then in the
+        // Firebase Console → Firestore → users/{your-uid}, change role to "admin".
+        await setDoc(doc(db, "users", cred.user.uid), {
+          name,
+          email,
+          role: "borrower",
+          createdAt: serverTimestamp()
+        });
+
+        window.location.href = "dashboard.html";
+      } catch (err) {
+        errorBox.textContent = friendlyError(err);
+        errorBox.classList.add("show");
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Create account";
+      }
+    });
+
+    function friendlyError(err) {
+      const code = err.code || "";
+      if (code.includes("email-already-in-use")) return "That email is already registered. Try signing in instead.";
+      if (code.includes("weak-password")) return "Password is too weak — use at least 6 characters.";
+      if (code.includes("invalid-email")) return "That email address doesn't look right.";
+      return "Couldn't create your account. Please try again.";
+    }
+  </script>
+</body>
+</html>

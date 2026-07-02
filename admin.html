@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <span class="mark">Ledger</span>
+      <span class="tag">Admin</span>
+    </div>
+    <div class="user-chip">
+      <span id="whoami"></span>
+      <button class="btn ghost small" id="logoutBtn">Sign out</button>
+    </div>
+  </div>
+
+  <div class="shell">
+    <div class="section-head">
+      <h2>Pending approval</h2>
+      <span class="count" id="pendingCount"></span>
+    </div>
+    <div id="pendingList"><div class="loading">Loading…</div></div>
+
+    <div class="section-head">
+      <h2>All loans</h2>
+      <span class="count" id="allCount"></span>
+    </div>
+    <div id="allList"><div class="loading">Loading…</div></div>
+  </div>
+
+  <script type="module">
+    import {
+      auth, db, signOut, requireAdmin, collection, onSnapshot,
+      formatMoney, formatDate, loanStatusLabel
+    } from "./js/firebase-init.js";
+
+    document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth));
+
+    requireAdmin((user, profile) => {
+      document.getElementById("whoami").textContent = profile.name || profile.email;
+
+      onSnapshot(collection(db, "loans"), (snap) => {
+        const loans = [];
+        snap.forEach(d => loans.push({ id: d.id, ...d.data() }));
+        loans.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+
+        const pending = loans.filter(l => l.status === "pending");
+        const rest = loans;
+
+        document.getElementById("pendingCount").textContent = pending.length;
+        document.getElementById("allCount").textContent = rest.length;
+
+        document.getElementById("pendingList").innerHTML = pending.length
+          ? pending.map(cardHTML).join("")
+          : `<div class="empty-state"><h3>Nothing waiting</h3><p>New applications will land here.</p></div>`;
+
+        document.getElementById("allList").innerHTML = rest.length
+          ? rest.map(cardHTML).join("")
+          : `<div class="empty-state"><h3>No loans yet</h3></div>`;
+      });
+    });
+
+    function cardHTML(loan) {
+      const status = loanStatusLabel(loan);
+      return `
+        <a class="loan-card" href="loan-detail.html?id=${loan.id}" style="text-decoration:none;color:inherit;">
+          <div>
+            <div class="who">${loan.borrowerName}</div>
+            <div class="meta">${loan.purpose || "No purpose given"} · Applied ${formatDate(loan.createdAt)}</div>
+          </div>
+          <div class="amount mono">${formatMoney(loan.amount)}</div>
+          <div class="stamp ${status}">${status}</div>
+        </a>`;
+    }
+  </script>
+</body>
+</html>
